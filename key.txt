@@ -1,0 +1,17 @@
+Wallet A:
+ + WIF: cUDgLMz3ktvNfSGX4SfKzgyvZb25EQEvkfY34oxToe8sPeByLi5f
+ + Addr: mvHnfZwxq2n9UaXPqZYPc4btBi6GwNb9VD
+
+Wallet B:
+ + WIF: cP5Kij8j9fvxgFav7S8siUaZhdugGgeNCiK8RgfMttCPSNkkDxTJ
+ + Addr: mvtwzw3UxcjVt7amX9cvmfW6TgqvX2W7m2
+
+
+curl -X POST -sSLd "0200000001444f45ceb52cc37c77cb024291e16917c349bfd78bc6043c3af0c66cfaeee217000000006a47304402206b6852c7351f9b59344b47f439156cf7dd5dd8f028846d2d1d45a9645fa4ca6702201c4dca606ca0184ca7ddd5474052ae699723d346667da84a0ad2f20e8e39d05d01210274fc4209dbd9447ff3b9a62df4224989ba1810ccda5d3be4936a37c9c909514affffffff0110270000000000001976a914a8b2ca9f9b259672b9a8e33a6246b03d94cbb2ce88ac00000000" "https://mempool.space/testnet/api/tx"
+
+
+phrase: couch about sign bamboo scare dry license useless illegal cluster prison size
+WIF : cQ5jviwGvt6gAG6WxJuNbcVe7fdBriHhmrV5qx1dQtBhR4Q2mu1p
+
+ssh -L 18332:127.0.0.1:18332 codelight@222.253.82.244 -p 2223
+codelight/Codelight123!@#
