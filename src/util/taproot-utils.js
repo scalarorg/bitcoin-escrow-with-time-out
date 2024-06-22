@@ -4,6 +4,8 @@ const ecc = require("tiny-secp256k1");
 
 const ECPair = ECPairFactory(ecc);
 
+const buffer_1 = require('buffer');
+
 function tweakSigner(signer, opts = {}) {
   let privateKey = signer.privateKey;
   if (!privateKey) {
@@ -32,6 +34,7 @@ function tapTweakHash(pubKey, h) {
     Buffer.concat(h ? [pubKey, h] : [pubKey])
   );
 }
+
 
 function toXOnly(pubkey) {
   return pubkey.subarray(1, 33);

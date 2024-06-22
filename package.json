@@ -5,6 +5,7 @@
     "bip174": "^2.1.1",
     "bitcoinjs-lib": "^6.1.6",
     "bitcore-lib": "^10.0.36",
+    "buffer": "^6.0.3",
     "child_process": "^1.0.2",
     "dotenv": "^16.4.5",
     "ecpair": "^2.1.0",

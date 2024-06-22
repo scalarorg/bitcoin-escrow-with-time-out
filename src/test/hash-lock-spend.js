@@ -10,7 +10,9 @@ const ecc = require("tiny-secp256k1");
 const { tweakSigner, toXOnly } = require("../util/taproot-utils");
 const { API } = require("../util/utils");
 const { p2pk } = require("bitcoinjs-lib/src/payments");
-const { witnessStackToScriptWitness} = require("../util/witness_stack_to_script_witness")
+const {
+  witnessStackToScriptWitness,
+} = require("../util/witness_stack_to_script_witness");
 
 // Initialize the ECC library
 bitcoin.initEccLib(ecc);
@@ -72,12 +74,16 @@ const hash_lock_p2tr = bitcoin.payments.p2tr({
   network,
 });
 
+// const tapLeafScript = {
+//   leafVersion: LEAF_VERSION_TAPSCRIPT,
+//   script: hash_lock_redeem.output,
+//   controlBlock: hash_lock_p2tr.witness[p2pk_p2tr.witness.length - 1],
+// };
 const tapLeafScript = {
-  leafVersion: LEAF_VERSION_TAPSCRIPT,
-  script: hash_lock_redeem.output,
-  controlBlock: hash_lock_p2tr.witness[p2pk_p2tr.witness.length - 1],
+  leafVersion: p2pk_redeem.redeemVersion,
+  script: p2pk_redeem.output,
+  controlBlock: p2pk_p2tr.witness[p2pk_p2tr.witness.length - 1],
 };
-
 async function createTransaction_p2pk_psbt(changeWIF, receiverWIF) {
   const keyPair = ECPair.fromWIF(changeWIF, network);
   const txb = new bitcoin.Psbt({ network });
@@ -126,14 +132,14 @@ async function createTransaction_p2pk_psbt(changeWIF, receiverWIF) {
   txb.addOutputs([
     {
       address: change_address,
-      value: preUTXO.outs[0].value,
+      value: preUTXO.outs[0].value - 50000,
     },
   ]);
 
-  txb.signInput(0, keyPair); 
+  txb.signInput(0, keyPair);
 
   function customFinalizer(_inputIndex, input) {
-    const scriptSolution = [input.tapScriptSig[0].signature, secret_bytes];
+    const scriptSolution = [input.tapScriptSig[0].signature];
     const witness = scriptSolution
       .concat(tapLeafScript.script)
       .concat(tapLeafScript.controlBlock);

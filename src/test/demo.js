@@ -13,7 +13,7 @@ const axios = require("axios");
 const url = process.env.url_external;
 
 // utils
-const { B2S, API } = require("../util/utils.js");
+const { B2S, API } = require("../../util/utils.js");
 
 const bitcoin = require("bitcoinjs-lib");
 const ECPairFactory = require("ecpair").default;
