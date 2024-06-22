@@ -35,8 +35,6 @@ const p2pk_script_asm = `${toXOnly(keypair_taproot.publicKey).toString(
 const p2pk_script = bitcoin.script.fromASM(p2pk_script_asm);
 
 // Construct taptree
-// Tapleaf version: https://github.com/bitcoin/bips/blob/master/bip-0341.mediawiki
-const LEAF_VERSION_TAPSCRIPT = 0xc0;
 const scriptTree = [
   {
     output: hash_lock_script,
@@ -108,7 +106,7 @@ const res = createTransaction(process.env.changeWIF, false)
   .then((transaction) => {
     console.log(transaction);
     // API(process.env.url_internal, "sendrawtransaction", transaction);
-    API(process.env.url_external,"testmempoolaccept", [transaction])
+    API(process.env.url_internal,"testmempoolaccept", [transaction])
   })
   .catch((error) => {
     console.log(error);

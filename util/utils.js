@@ -30,7 +30,7 @@ async function API(url, method, params) {
       console.log(JSON.stringify(response.data));
     })
     .catch((error) => {
-      if (error.response) {
+      if (error.response.data) {
         console.log("Status:", error.response.status);
         console.error("Error:", error.response.data.error);
       } else console.log(error);

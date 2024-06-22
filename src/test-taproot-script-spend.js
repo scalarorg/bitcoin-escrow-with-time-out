@@ -9,6 +9,8 @@ const ecc = require("tiny-secp256k1");
 // utils
 const { tweakSigner, toXOnly } = require("../util/taproot-utils");
 const { API } = require("../util/utils");
+const { p2pk } = require("bitcoinjs-lib/src/payments");
+const { witnessStackToScriptWitness} = require("../util/witness_stack_to_script_witness")
 
 // Initialize the ECC library
 bitcoin.initEccLib(ecc);
@@ -37,6 +39,16 @@ const p2pk_script = bitcoin.script.fromASM(p2pk_script_asm);
 // Construct taptree
 // Tapleaf version: https://github.com/bitcoin/bips/blob/master/bip-0341.mediawiki
 const LEAF_VERSION_TAPSCRIPT = 0xc0;
+
+const hash_lock_redeem = {
+  output: hash_lock_script,
+  redeemVersion: LEAF_VERSION_TAPSCRIPT,
+};
+const p2pk_redeem = {
+  output: p2pk_script,
+  redeemVersion: LEAF_VERSION_TAPSCRIPT,
+};
+
 const scriptTree = [
   {
     output: hash_lock_script,
@@ -45,15 +57,28 @@ const scriptTree = [
     output: p2pk_script,
   },
 ];
-const script_p2tr = bitcoin.payments.p2tr({
+
+const p2pk_p2tr = bitcoin.payments.p2tr({
   internalPubkey: toXOnly(keypair_taproot.publicKey),
   scriptTree,
+  redeem: p2pk_redeem,
   network,
 });
-const script_addr = script_p2tr.address ?? "";
-console.log(script_addr)
 
-async function createTransaction(changeWIF, receiverWIF) {
+const hash_lock_p2tr = bitcoin.payments.p2tr({
+  internalPubkey: toXOnly(keypair_taproot.publicKey),
+  scriptTree,
+  redeem: hash_lock_redeem,
+  network,
+});
+
+const tapLeafScript = {
+  leafVersion: LEAF_VERSION_TAPSCRIPT,
+  script: hash_lock_redeem.output,
+  controlBlock: hash_lock_p2tr.witness[p2pk_p2tr.witness.length - 1],
+};
+
+async function createTransaction_p2pk_psbt(changeWIF, receiverWIF) {
   const keyPair = ECPair.fromWIF(changeWIF, network);
   const txb = new bitcoin.Psbt({ network });
   // Default setting
@@ -61,16 +86,35 @@ async function createTransaction(changeWIF, receiverWIF) {
   txb.setLocktime(0);
 
   const preUTXO = bitcoin.Transaction.fromHex(
-    "02000000029a57d306a96eb2aff57f759c95ef06b471636d523f3c6cab46abdd3699406dd3000000006b483045022100e19620fc52f3cd73c6a675b8e0f60b4492daf4df945ad655e130fab289b6aad402205cf7f8b07ef91518c1fdd820942a50c6d8c850c947f1813bf11f916ad5e64ffd012103f74c53f2e72c728d799d142072100d463be4df5dcc08bce73b56ab1552cdaef3fdffffff71398f1393d52784865f7de67c473e87d9d9f2ff812713b65646e0356ae7b02f010000006a473044022039fb78e6c4b9c020d08b1d737ac58b3d715f7a422e1d33bb842f5433e40d189402203aba59ec58116d218346bb9117fb3b826036708c5dbade57b768976f176e5dc2012103f74c53f2e72c728d799d142072100d463be4df5dcc08bce73b56ab1552cdaef3fdffffff0100093d0000000000160014d6daf3fba915fed7eb3a88d850faccb9fd00db1700000000"
+    "02000000000101552412d4c2ea26f991d559c4df90be3e532e3f55b0f89ac1cd4570c485f3a7250000000000fdffffff04e093040000000000225120d42eaf3cb8da8a131a1d0e6def14ec7448d0f800d08f95513ce6989e949a5077e093040000000000225120d42eaf3cb8da8a131a1d0e6def14ec7448d0f800d08f95513ce6989e949a5077e093040000000000225120d42eaf3cb8da8a131a1d0e6def14ec7448d0f800d08f95513ce6989e949a5077108a2e0000000000160014d6daf3fba915fed7eb3a88d850faccb9fd00db17024730440220166411f14998a9d755f734d46c3b7d6ae22a6ea345cd58318f19c8d1ac3ca44802203fd55af625e2baac462b3fe7d70c7d86ea2eee23e5e76e8a81c69342dc16e2be0121022ae24aecee27d2f6b4c80836dfe1e86a6f9a14a4dd3b1d269bdeda4e6834e82f00000000"
   );
   txb.addInputs([
+    // PUBKEY SPEND
+
+    // {
+    //   hash: "febaba546021ad4db3de86585a9eff6f6c57387bfa8457976832b908c0cbc454",
+    //   index: 0, // Index of the output in the previous transaction
+    //   witnessUtxo: {
+    //     script: preUTXO.outs[0].script,
+    //     value: preUTXO.outs[0].value,
+    //   },
+    //   tapLeafScript: [
+    //     {
+    //       leafVersion: LEAF_VERSION_TAPSCRIPT,
+    //       script: p2pk_redeem.output,
+    //       controlBlock: p2pk_p2tr.witness[p2pk_p2tr.witness.length - 1]
+    //     }
+    //   ],
+    //   sequence: 0xfffffffd, // big endian
+    // },
     {
-      hash: "25a7f385c47045cdc19af8b0553f2e533ebe90dfc459d591f926eac2d4122455",
-      index: 0, // Index of the output in the previous transaction
+      hash: "febaba546021ad4db3de86585a9eff6f6c57387bfa8457976832b908c0cbc454",
+      index: 1, // Index of the output in the previous transaction
       witnessUtxo: {
         script: preUTXO.outs[0].script,
         value: preUTXO.outs[0].value,
       },
+      tapLeafScript: [tapLeafScript],
       sequence: 0xfffffffd, // big endian
     },
   ]);
@@ -81,22 +125,35 @@ async function createTransaction(changeWIF, receiverWIF) {
   }).address;
   txb.addOutputs([
     {
-      address: script_addr,
-      value: 300000,
+      address: change_address,
+      value: preUTXO.outs[0].value,
     },
   ]);
 
-  txb.signInput(0, keyPair); // NOTE, with taproot spend, we need to use Tweaked Signer
-  txb.finalizeAllInputs();
+  txb.signInput(0, keyPair); 
+
+  function customFinalizer(_inputIndex, input) {
+    const scriptSolution = [input.tapScriptSig[0].signature, secret_bytes];
+    const witness = scriptSolution
+      .concat(tapLeafScript.script)
+      .concat(tapLeafScript.controlBlock);
+
+    return {
+      finalScriptWitness: witnessStackToScriptWitness(witness),
+    };
+  }
+
+  txb.finalizeInput(0, customFinalizer);
 
   const tx = txb.extractTransaction();
   return tx.toHex();
 }
-const res = createTransaction(process.env.changeWIF, false)
+
+const res = createTransaction_p2pk_psbt(process.env.changeWIF, false)
   .then((transaction) => {
     console.log(transaction);
     // API(process.env.url_internal, "sendrawtransaction", transaction);
-    API(process.env.url_internal,"testmempoolaccept", [transaction])
+    // API(process.env.url_internal,"testmempoolaccept", [transaction])
   })
   .catch((error) => {
     console.log(error);
