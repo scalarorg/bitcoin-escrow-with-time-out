@@ -6,6 +6,8 @@ REFERENCES:
   # main: https://medium.com/@bitcoindeezy/bitcoin-basics-programming-with-bitcoinjs-lib-4a69218c0431
   # taproot: + https://dev.to/eunovo/a-guide-to-creating-taproot-scripts-with-bitcoinjs-lib-4oph
              + https://ordinallabs.medium.com/understanding-taproot-addresses-a-simple-guide-5475da0fb3d3
+  # specific for taproot spend: 
+             + https://github.com/bitcoinjs/bitcoinjs-lib/blob/master/test/integration/taproot.spec.ts
 */
 require("dotenv").config();
 const mempoolJS = require("@mempool/mempool.js");
@@ -62,7 +64,7 @@ const p2pk_redeem = {
   redeemVersion: LEAF_VERSION_TAPSCRIPT,
 };
 
-// Construct taptree
+// Construct taptree - must be in MAST from
 const scriptTree = [
   {
     output: hash_lock_script,
@@ -86,28 +88,47 @@ async function createTransaction(changeWIF) {
   txb.setVersion(2);
   txb.setLocktime(0);
 
-  const preUTXO = bitcoin.Transaction.fromHex(
-    "0200000000010154c4cbc008b93268975784fa7b38576c6fff9e5a5886deb34dad216054babafe0100000000fdffffff0190d0030000000000160014d6daf3fba915fed7eb3a88d850faccb9fd00db170440a0667ce2072432d9da5db91ac7e4fd734887a710fc4aa270232e21dfb2c099183d398245d52c60a0b1c38e9f76d4b7fb22c8528cb896e7bf28e38e16356026930653454352455439a9142d261cc8cd214eccdfe4b0fa6a1d9576ae08a0c388202ae24aecee27d2f6b4c80836dfe1e86a6f9a14a4dd3b1d269bdeda4e6834e82fac41c02ae24aecee27d2f6b4c80836dfe1e86a6f9a14a4dd3b1d269bdeda4e6834e82f27672ddb89164c52dbd1609ff005a722c449f21ba270120c40bee5fe89116c8d00000000"
+  const preUTXO_0 = bitcoin.Transaction.fromHex(
+    "0200000000010154c4cbc008b93268975784fa7b38576c6fff9e5a5886deb34dad216054babafe0000000000fdffffff0190d0030000000000160014d6daf3fba915fed7eb3a88d850faccb9fd00db1703403f484cda634b36892cc63a9ea504498fd7c131f72232842fa360dc52777c7ea5fe9890e1bf2991d9b4ac5ae1b4c7e0abaef115243a332a4fccc7bc3b01aecebb22202ae24aecee27d2f6b4c80836dfe1e86a6f9a14a4dd3b1d269bdeda4e6834e82fac41c02ae24aecee27d2f6b4c80836dfe1e86a6f9a14a4dd3b1d269bdeda4e6834e82f66efef60710d808e50cbbf6b2a5b3036e42306c495392c5b21f5de738788a14a00000000"
+  );
+  const preUTXO_1 = bitcoin.Transaction.fromHex(
+    "0200000000010154c4cbc008b93268975784fa7b38576c6fff9e5a5886deb34dad216054babafe0200000000fdffffff0190d0030000000000160014d6daf3fba915fed7eb3a88d850faccb9fd00db1701407d943acf66113276835637aed02cb12a57a1109bdc7fe2ed85f597eaa8a50dd4354bc17dbbe548d3f78efb788a64b09b0183614020cd578e682fa9b00cecfdf700000000"
   );
   txb.addInputs([
     {
-      hash: "1f6a1c964f3dcb22be6b73fae1ad3b3444ebf72193a8b0034c1e455c1e8278b0",
+      hash: "68334f1a8ac3e403af3c2b5b34efa0494d8bb73a18553858f303d1904244e19f",
       index: 0, // Index of the output in the previous transaction
       witnessUtxo: {
-        script: preUTXO.outs[0].script,
-        value: preUTXO.outs[0].value,
+        script: preUTXO_0.outs[0].script,
+        value: preUTXO_0.outs[0].value,
+      },
+      sequence: 0xfffffffd, // big endian
+    },
+    {
+      hash: "2851ade7b2cadaff7618e26903e74d77b9439ab3a3d2a4adcd3dd0ba6f9ba196",
+      index: 0, // Index of the output in the previous transaction
+      witnessUtxo: {
+        script: preUTXO_1.outs[0].script,
+        value: preUTXO_1.outs[0].value,
       },
       sequence: 0xfffffffd, // big endian
     },
   ]);
-
   txb.addOutputs([
     {
       address: script_p2tr.address,
-      value: preUTXO.outs[0].value - 50000, // Amount in satoshis
+      value: 150000, // Amount in satoshis
+    },
+    {
+      address: script_p2tr.address,
+      value: 150000, // Amount in satoshis
+    },
+    {
+      address: script_p2tr.address,
+      value: 150000, // Amount in satoshis
     },
   ]);
-  txb.signInput(0, keyPair); // NOTE, with taproot spend, we need to use Tweaked Signer
+  txb.signAllInputs(keyPair)
   txb.finalizeAllInputs();
 
   const tx = txb.extractTransaction();

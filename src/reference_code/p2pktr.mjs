@@ -139,6 +139,9 @@ async function start_taptree(keypair) {
       {
         leafVersion: p2pk_redeem.redeemVersion,
         script: p2pk_redeem.output,
+        // why last witness: 
+        // + Script Execution
+        // + Leaf Script Validation
         controlBlock: p2pk_p2tr.witness[p2pk_p2tr.witness.length - 1],
       },
     ],

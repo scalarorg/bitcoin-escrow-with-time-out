@@ -6,6 +6,8 @@ REFERENCES:
   # main: https://medium.com/@bitcoindeezy/bitcoin-basics-programming-with-bitcoinjs-lib-4a69218c0431
   # taproot: + https://dev.to/eunovo/a-guide-to-creating-taproot-scripts-with-bitcoinjs-lib-4oph
              + https://ordinallabs.medium.com/understanding-taproot-addresses-a-simple-guide-5475da0fb3d3
+  # specific for taproot spend: 
+             + https://github.com/bitcoinjs/bitcoinjs-lib/blob/master/test/integration/taproot.spec.ts
 */
 require("dotenv").config();
 const mempoolJS = require("@mempool/mempool.js");
@@ -62,7 +64,7 @@ const p2pk_redeem = {
   redeemVersion: LEAF_VERSION_TAPSCRIPT,
 };
 
-// Construct taptree
+// Construct taptree - must be in MAST from
 const scriptTree = [
   {
     output: hash_lock_script,
@@ -87,11 +89,11 @@ async function createTransaction(changeWIF) {
   txb.setLocktime(0);
 
   const preUTXO = bitcoin.Transaction.fromHex(
-    "02000000000101b078821e5c451e4c03b0a89321f7eb44343bade1fa736bbe22cb3d4f961c6a1f0000000000fdffffff01400d030000000000225120d42eaf3cb8da8a131a1d0e6def14ec7448d0f800d08f95513ce6989e949a5077024730440220485c20469e41e3d8ee59381278d678bae992a04a627df00879a911522ee11faf02206e1526ec5925dbd25c476770748c0ecaf5b95f0a84acc6cd948a61bad40ed3660121022ae24aecee27d2f6b4c80836dfe1e86a6f9a14a4dd3b1d269bdeda4e6834e82f00000000"
+    "020000000001029fe1444290d103f3583855183ab78b4d49a0ef345b2b3caf03e4c38a1a4f33680000000000fdffffff96a19b6fbad03dcdada4d2a3b39a43b9774de70369e21876ffdacab2e7ad51280000000000fdffffff03f049020000000000225120d42eaf3cb8da8a131a1d0e6def14ec7448d0f800d08f95513ce6989e949a5077f049020000000000225120d42eaf3cb8da8a131a1d0e6def14ec7448d0f800d08f95513ce6989e949a5077f049020000000000225120d42eaf3cb8da8a131a1d0e6def14ec7448d0f800d08f95513ce6989e949a507702483045022100e2278ede62b8b8bcf26a3b9be59c05bc4ccff0f1ff18ab43ba94f413dc3371fc02202e620c33255c1dfba7fb7e11411738b62610d5aa0ddda960c92fbc1b253396e10121022ae24aecee27d2f6b4c80836dfe1e86a6f9a14a4dd3b1d269bdeda4e6834e82f0247304402201cd00508f5ff0f949beb811766de171c4700d9f714cf2079a72fc5560e99ac0302207947323942be06d3222c82c58be7772093c759bfa4d1676ed5164b55ebad8d2b0121022ae24aecee27d2f6b4c80836dfe1e86a6f9a14a4dd3b1d269bdeda4e6834e82f00000000"
   );
   txb.addInputs([
     {
-      hash: "320a8ffd66e24612318a99dae55d1cd0e25f4fc07c7889f5f0121cfa55ba1130",
+      hash: "54cd0a57f9a769643f161ad76d8436403b3753f912b8278fc7a1fbdd67150a6e",
       index: 0, // Index of the output in the previous transaction
       witnessUtxo: {
         script: preUTXO.outs[0].script,
@@ -102,10 +104,9 @@ async function createTransaction(changeWIF) {
       sequence: 0xfffffffd, // big endian
     },
   ]);
-
   txb.addOutputs([
     {
-      address: script_p2tr.address,
+      address: "tb1q6md087afzhld06e63rv9p7kvh87spkchyguwg0",
       value: preUTXO.outs[0].value - 50000, // Amount in satoshis
     },
   ]);
@@ -120,9 +121,9 @@ async function createTransaction(changeWIF) {
 const res = createTransaction(process.env.changeWIF, false)
   .then((transaction) => {
     console.log(transaction);
-    // API(process.env.url_internal, "sendrawtransaction", transaction);
+    API(process.env.url_internal, "sendrawtransaction", transaction);
     // Require to test
-    API(process.env.url_internal, "testmempoolaccept", [transaction]);
+    // API(process.env.url_internal, "testmempoolaccept", [transaction]);
   })
   .catch((error) => {
     console.log(error);

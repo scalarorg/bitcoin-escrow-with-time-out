@@ -7,12 +7,12 @@ const ECPairFactory = require("ecpair").default;
 const ecc = require("tiny-secp256k1");
 
 // utils
-const { tweakSigner, toXOnly } = require("../util/taproot-utils");
-const { API } = require("../util/utils");
+const { tweakSigner, toXOnly } = require("./util/taproot-utils");
+const { API } = require("./util/utils");
 const { p2pk } = require("bitcoinjs-lib/src/payments");
 const {
   witnessStackToScriptWitness,
-} = require("../util/witness_stack_to_script_witness");
+} = require("./util/witness_stack_to_script_witness");
 
 // Initialize the ECC library
 bitcoin.initEccLib(ecc);
@@ -139,6 +139,7 @@ async function createTransaction_p2pk_psbt(changeWIF, receiverWIF) {
   txb.signInput(0, keyPair);
 
   function customFinalizer(_inputIndex, input) {
+    console.log(input)
     const scriptSolution = [input.tapScriptSig[0].signature];
     const witness = scriptSolution
       .concat(tapLeafScript.script)

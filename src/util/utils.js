@@ -6,6 +6,10 @@ function B2S(amount_BTC) {
   return parseInt(amount_BTC * 10 ** 8);
 }
 
+function NumtoHex(number) {
+  return number.toString(16).padStart(2, "0")
+}
+
 async function API(url, method, params) {
   const data = {
     jsonrpc: "1.0",
@@ -37,4 +41,4 @@ async function API(url, method, params) {
     });
 }
 
-module.exports = { B2S, API };
+module.exports = { B2S, API, NumtoHex };
