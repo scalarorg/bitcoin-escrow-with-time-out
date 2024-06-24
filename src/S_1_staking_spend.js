@@ -61,35 +61,62 @@ WARNING: tapscript disabled OP_CHECKMULTISIG and OP_CHECKMULTISIGVERIFY opcodes
 Let use OP_CHECKSIGADD
 Material: https://github.com/babylonchain/btc-staking-ts/blob/main/src/utils/stakingScript.ts
 */
-const threshold = 2;
-const slashing_script_asm = [
+let threshold = 2;
+
+const UC_slashing_script_asm = [
   toXOnly(keypair_user.publicKey),
   bitcoin.opcodes.OP_CHECKSIG,
   toXOnly(keypair_scalar.publicKey),
   bitcoin.opcodes.OP_CHECKSIGADD,
+  bitcoin.script.number.encode(threshold),
+  bitcoin.opcodes.OP_NUMEQUAL,
+];
+const UC_slashing_scrip = bitcoin.script.compile(UC_slashing_script_asm);
+
+const UP_slashing_script_asm = [
+  toXOnly(keypair_user.publicKey),
+  bitcoin.opcodes.OP_CHECKSIG,
   toXOnly(keypair_provider.publicKey),
   bitcoin.opcodes.OP_CHECKSIGADD,
   bitcoin.script.number.encode(threshold),
-  bitcoin.opcodes.OP_GREATERTHANOREQUAL,
+  bitcoin.opcodes.OP_NUMEQUAL,
 ];
+const UP_slashing_scrip = bitcoin.script.compile(UP_slashing_script_asm);
 
-const slashing_script = bitcoin.script.compile(slashing_script_asm);
-
-// Construct taptree
-const LEAF_VERSION_TAPSCRIPT = 0xc0;
+const CP_slashing_script_asm = [
+  toXOnly(keypair_scalar.publicKey),
+  bitcoin.opcodes.OP_CHECKSIG,
+  toXOnly(keypair_provider.publicKey),
+  bitcoin.opcodes.OP_CHECKSIGADD,
+  bitcoin.script.number.encode(threshold),
+  bitcoin.opcodes.OP_NUMEQUAL,
+];
+const CP_slashing_scrip = bitcoin.script.compile(CP_slashing_script_asm);
 
 // Construct taptree - must be in MAST from
 const scriptTree = [
   {
     output: staking_script,
   },
-  {
-    output: slashing_script,
-  },
+  [
+    {
+      output: UC_slashing_scrip,
+    },
+    [
+      {
+        output: UP_slashing_scrip,
+      },
+      {
+        output: CP_slashing_scrip,
+      },
+    ],
+  ],
 ];
 
 // Construct redeem
 // Tapleaf version: https://github.com/bitcoin/bips/blob/master/bip-0341.mediawiki
+const LEAF_VERSION_TAPSCRIPT = 0xc0
+
 const staking_redeem = {
   output: staking_script,
   redeemVersion: LEAF_VERSION_TAPSCRIPT,
@@ -119,15 +146,15 @@ async function createTransaction() {
   txb.setLocktime(0);
 
   const preUTXO = bitcoin.Transaction.fromHex(
-    "02000000000101e7e5ab26e7df7f60a0f32324b63e61b356883d5541a4083fb2a4f405c07cc7ba0100000000ffffffef02a08601000000000022512011b16c0dda755f6a932a9fd673107d852faa16fdb16831d3c5bd90626bd4171c400d030000000000160014d6daf3fba915fed7eb3a88d850faccb9fd00db1702483045022100e14cf67c0539ea98a09a252f9fe8f7220af815d4c4102afe2d8b1b8821181e3f02206072ed6bcfbebcb680b2da1c32a50279004a2f70c53991fc8f6832ceb388c94b0121022ae24aecee27d2f6b4c80836dfe1e86a6f9a14a4dd3b1d269bdeda4e6834e82f00000000"
+    "020000000001011acaf5f4fb897201699bd445c1604e541a1ca694d2aceb2a524ab0fbfecf735e0000000000ffffffef05a086010000000000225120a9e5f82dee6aede3b401c0e79955979ed1c92c8faa90f599a17704a89bbe07c4a086010000000000225120a9e5f82dee6aede3b401c0e79955979ed1c92c8faa90f599a17704a89bbe07c4a086010000000000225120a9e5f82dee6aede3b401c0e79955979ed1c92c8faa90f599a17704a89bbe07c4a086010000000000225120a9e5f82dee6aede3b401c0e79955979ed1c92c8faa90f599a17704a89bbe07c4a086010000000000160014d6daf3fba915fed7eb3a88d850faccb9fd00db170247304402206741048d96dd4ce8248be312b5986dfa8c287509b2ce7a4a139437a88d9e8e56022058939513ba533c5604e2bf3fee82da76b278cc5f6ca275552325c76af6a4c7720121022ae24aecee27d2f6b4c80836dfe1e86a6f9a14a4dd3b1d269bdeda4e6834e82f00000000"
   );
   txb.addInputs([
     {
-      hash: "7797eaed5c31f872b99f6fa7a9f123f4bf8bd729154301aac4c33ff3c6ed548c",
-      index: 0, // Index of the output in the previous transaction
+      hash: "d9fc64d6db1c6a2df075767e8d9ea8191f7340e7c0006310afbc959fe64b1b17",
+      index: 1, // Index of the output in the previous transaction
       witnessUtxo: {
-        script: preUTXO.outs[0].script,
-        value: preUTXO.outs[0].value,
+        script: preUTXO.outs[1].script,
+        value: preUTXO.outs[1].value,
       },
       tapLeafScript: [tapLeafScript],
       sequence: delay_time, // big endian

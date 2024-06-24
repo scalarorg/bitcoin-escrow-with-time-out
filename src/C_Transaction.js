@@ -35,7 +35,8 @@ const network = bitcoin.networks.testnet;
     - internal key: Forcing withdraw - (Schnorr signature for User + Scalar + Provider)
     - Script path:
       + Staking: User withdraw after time lock
-      + Slashing: 2-of-3 spend
+      + Slashing: 2-of-3 spend: User - Scalar - Provider 
+      
 */
 const keypair_internal = ECPair.fromWIF(process.env.internalWIF, network);
 
@@ -55,26 +56,50 @@ const staking_script_asm = [
 const staking_script = bitcoin.script.compile(staking_script_asm);
 
 // Slashing script: 2-of-3 spend mulsig
-// Stack: [User - Scalar - Provider
+// Case: User + Scalar
+// Case: User + Provider
 /*
 WARNING: tapscript disabled OP_CHECKMULTISIG and OP_CHECKMULTISIGVERIFY opcodes 
 Let use OP_CHECKSIGADD
 Material: https://github.com/babylonchain/btc-staking-ts/blob/main/src/utils/stakingScript.ts
+NOTE:
+It seems that OP_CHECKSIGADD not work as we want:
+let split script in to 3 path:
+ + User - Scalar
+ + User - Provider
+ + Scalar - Provider
 */
-const threshold = 2;
-const slashing_script_asm = [
+let threshold = 2;
+
+const UC_slashing_script_asm = [
   toXOnly(keypair_user.publicKey),
   bitcoin.opcodes.OP_CHECKSIG,
   toXOnly(keypair_scalar.publicKey),
   bitcoin.opcodes.OP_CHECKSIGADD,
+  bitcoin.script.number.encode(threshold),
+  bitcoin.opcodes.OP_NUMEQUAL,
+];
+const UC_slashing_scrip = bitcoin.script.compile(UC_slashing_script_asm);
+
+const UP_slashing_script_asm = [
+  toXOnly(keypair_user.publicKey),
+  bitcoin.opcodes.OP_CHECKSIG,
   toXOnly(keypair_provider.publicKey),
   bitcoin.opcodes.OP_CHECKSIGADD,
   bitcoin.script.number.encode(threshold),
-  bitcoin.opcodes.OP_GREATERTHANOREQUAL,
+  bitcoin.opcodes.OP_NUMEQUAL,
 ];
+const UP_slashing_scrip = bitcoin.script.compile(UP_slashing_script_asm);
 
-const slashing_script = bitcoin.script.compile(slashing_script_asm);
-
+const CP_slashing_script_asm = [
+  toXOnly(keypair_scalar.publicKey),
+  bitcoin.opcodes.OP_CHECKSIG,
+  toXOnly(keypair_provider.publicKey),
+  bitcoin.opcodes.OP_CHECKSIGADD,
+  bitcoin.script.number.encode(threshold),
+  bitcoin.opcodes.OP_NUMEQUAL,
+];
+const CP_slashing_scrip = bitcoin.script.compile(CP_slashing_script_asm);
 // Construct taptree
 const LEAF_VERSION_TAPSCRIPT = 0xc0;
 
@@ -83,9 +108,19 @@ const scriptTree = [
   {
     output: staking_script,
   },
-  {
-    output: slashing_script,
-  },
+  [
+    {
+      output: UC_slashing_scrip,
+    },
+    [
+      {
+        output: UP_slashing_scrip,
+      },
+      {
+        output: CP_slashing_scrip,
+      },
+    ],
+  ],
 ];
 
 // Gen taproot address
@@ -95,17 +130,6 @@ const script_p2tr = bitcoin.payments.p2tr({
   network,
 });
 
-// Construct redeem
-// Tapleaf version: https://github.com/bitcoin/bips/blob/master/bip-0341.mediawiki
-const staking_redeem = {
-  output: staking_script,
-  redeemVersion: LEAF_VERSION_TAPSCRIPT,
-};
-const slashing_redeem = {
-  output: slashing_script,
-  redeemVersion: LEAF_VERSION_TAPSCRIPT,
-};
-
 async function createTransaction() {
   const txb = new bitcoin.Psbt({ network });
   // Default setting
@@ -113,15 +137,15 @@ async function createTransaction() {
   txb.setLocktime(0);
 
   const preUTXO = bitcoin.Transaction.fromHex(
-    "020000000001011c14a7899d099fdd04faae4626bdb2e596d6fa141b1eddfa790fe909dae176140000000000ffffffef02a086010000000000225120deff53f2c98c021c92ae710a79d6b804736223bdbfd1e1758b8816745707729f801a060000000000160014d6daf3fba915fed7eb3a88d850faccb9fd00db17024730440220732d9f4e2b2a1701b19a10face55025f9a4442c395f0ed2b683fb3f2fecd4f93022016ab93e1bf8e242afbce9af93529f109b7256d011e3f334e862e4a1054dc13f50121022ae24aecee27d2f6b4c80836dfe1e86a6f9a14a4dd3b1d269bdeda4e6834e82f00000000"
+    "0200000000010190cd907f561ad0cca71ecc0865b71d76f98f0fc6bcbe149774d08aa47b788b330100000000fdffffff02f877080000000000160014d6daf3fba915fed7eb3a88d850faccb9fd00db17f930200000000000160014dea5cec1d786dbfabab914bdf01a98d19a2f6165024730440220047c4aa7b13d3dbc978eae8be3dbfc685133946e6cefe488a38b264aba71211802206f37f2a51a185f1c5a333c6f2d872b10403666b4b5e05dcb25182683809e545f012102c22a22aa02faf47edc07a35e7ab41110d66e77308c7563e667541b1672fd3f5000000000"
   );
   txb.addInputs([
     {
-      hash: "bac77cc005f4a4b23f08a441553d8856b3613eb62423f3a0607fdfe726abe5e7",
-      index: 1, // Index of the output in the previous transaction
+      hash: "5e73cffefbb04a522aebacd294a61c1a544e60c145d49b69017289fbf4f5ca1a",
+      index: 0, // Index of the output in the previous transaction
       witnessUtxo: {
-        script: preUTXO.outs[1].script,
-        value: preUTXO.outs[1].value,
+        script: preUTXO.outs[0].script,
+        value: preUTXO.outs[0].value,
       },
       // make sure this nsequence must less than 0xEFFFFFFF to ensure CSV and CLTV can be used
       sequence: 0xefffffff, // big endian
@@ -133,8 +157,20 @@ async function createTransaction() {
       value: 100000, // Amount in satoshis
     },
     {
+      address: script_p2tr.address,
+      value: 100000, // Amount in satoshis
+    },
+    {
+      address: script_p2tr.address,
+      value: 100000, // Amount in satoshis
+    },
+    {
+      address: script_p2tr.address,
+      value: 100000, // Amount in satoshis
+    },
+    {
       address: "tb1q6md087afzhld06e63rv9p7kvh87spkchyguwg0",
-      value: 200000, // Amount in satoshis
+      value: 100000, // Amount in satoshis
     },
   ]);
 
