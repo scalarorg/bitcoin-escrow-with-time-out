@@ -19,7 +19,7 @@ const ecc = require("tiny-secp256k1");
 
 // utils
 const { tweakSigner, toXOnly } = require("./util/taproot-utils");
-const { API, NumtoHex } = require("./util/utils");
+const { API, sequence } = require("./util/utils");
 const { p2pk } = require("bitcoinjs-lib/src/payments");
 const {
   witnessStackToScriptWitness,
@@ -48,32 +48,22 @@ const keypair_user = ECPair.fromWIF(process.env.userWIF, network);
 const keypair_scalar = ECPair.fromWIF(process.env.scalarWIF, network);
 const keypair_provider = ECPair.fromWIF(process.env.providerWIF, network);
 
-const delay_block = 2;
-
-const staking_script_asm = `${NumtoHex(
-  delay_block
-)} OP_CHECKSEQUENCEVERIFY OP_DROP ${toXOnly(keypair_user.publicKey).toString(
+const delay_time = 1; // 1 unit = 512s
+const staking_script_asm = `00400001 OP_CHECKSEQUENCEVERIFY OP_DROP ${toXOnly(keypair_user.publicKey).toString(
   "hex"
 )} OP_CHECKSIG`;
-
 const staking_script = bitcoin.script.fromASM(staking_script_asm);
-console.log(staking_script.toString('hex'))
+
 // Slashing script: 2-of-3 spend mulsig
 // Stack: [User - Scalar - Provider
-const numberOfStaker = 3;
-const minimumOfStaker = 2;
 /*
 WARNING: tapscript disabled OP_CHECKMULTISIG and OP_CHECKMULTISIGVERIFY opcodes 
 Let use OP_CHECKSIGADD
 THIS SCRIPT is not work
 */
-const slashing_script_asm = `${NumtoHex(minimumOfStaker)} ${toXOnly(
-  keypair_user.publicKey
-).toString("hex")} ${toXOnly(keypair_scalar.publicKey).toString(
+const slashing_script_asm = `${toXOnly(keypair_user.publicKey).toString(
   "hex"
-)} ${toXOnly(keypair_provider.publicKey).toString("hex")} ${NumtoHex(
-  numberOfStaker
-)} OP_CHECKMULTISIG`;
+)} OP_CHECKSIGVERIFY OP_1 OP_NUMEQUAL`;
 
 const slashing_script = bitcoin.script.fromASM(slashing_script_asm);
 
@@ -121,18 +111,18 @@ async function createTransaction() {
   txb.setLocktime(0);
 
   const preUTXO = bitcoin.Transaction.fromHex(
-    "0200000000010190b9932f0fa23ec0b2963df7db1cbeee4fbd06cba8936a5f6c457274290838050000000000fdffffff04a08601000000000022512034ccbb62218308dddd0a1f70ec311ff41d1fe340c2ae402fba20da6c24480470a08601000000000022512034ccbb62218308dddd0a1f70ec311ff41d1fe340c2ae402fba20da6c24480470a08601000000000022512034ccbb62218308dddd0a1f70ec311ff41d1fe340c2ae402fba20da6c24480470400d030000000000160014d6daf3fba915fed7eb3a88d850faccb9fd00db170247304402205dcae40c3422f5373e8d84aa76e785993b0165a7b0dc702832bf6e0efc2b1b4f02201eddc1f7acaa73d2ad63780825248eaecc4a7adefb48dc167f26b34b0af3639e0121022ae24aecee27d2f6b4c80836dfe1e86a6f9a14a4dd3b1d269bdeda4e6834e82f00000000"
+    "020000000001014e7d13b0853d9a3b85d41fbece9af25c4bfd19ec5e57e91b71a60c92a78c4d4a0100000000ffffffef0250c3000000000000225120040d39c030b5bc7cd826176644d39e535b9e73a79da3977a9ac29c2abe8ac55da086010000000000160014d6daf3fba915fed7eb3a88d850faccb9fd00db17024830450221008d8aef5d4af7c18e50550296a5e9314728cad14a1babd335f4cd29977245358e0220203e12c8c1e2c9e6bf206613b4de7fb13a5ca64e543d7bddcd8463c73f45e2720121022ae24aecee27d2f6b4c80836dfe1e86a6f9a14a4dd3b1d269bdeda4e6834e82f00000000"
   );
   txb.addInputs([
     {
-      hash: "7b1e01733cf7e9f8d493a09fc5a3bbe1b19f72379a7155fc4553f6e2983f567d",
-      index: 1, // Index of the output in the previous transaction
+      hash: "a526a89f1eab19669cc58f1a251971da4da09bc9d2ba3ce8f443bd11ce634dcc",
+      index: 0, // Index of the output in the previous transaction
       witnessUtxo: {
         script: preUTXO.outs[0].script,
         value: preUTXO.outs[0].value,
       },
       tapLeafScript: [tapLeafScript],
-      sequence: 0xfffffffd, // big endian
+      sequence: 0x00400001, // big endian
     },
   ]);
   txb.addOutputs([

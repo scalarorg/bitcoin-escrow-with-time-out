@@ -19,10 +19,12 @@ const ecc = require("tiny-secp256k1");
 
 // utils
 const { tweakSigner, toXOnly } = require("./util/taproot-utils");
-const { API } = require("./util/utils");
+const { API, sequence } = require("./util/utils");
+const { p2pk } = require("bitcoinjs-lib/src/payments");
 const {
   witnessStackToScriptWitness,
 } = require("./util/witness_stack_to_script_witness");
+const { Hex } = require("bitcoinjs-lib/src/types");
 
 // Initialize the ECC library
 bitcoin.initEccLib(ecc);
@@ -46,37 +48,25 @@ const keypair_user = ECPair.fromWIF(process.env.userWIF, network);
 const keypair_scalar = ECPair.fromWIF(process.env.scalarWIF, network);
 const keypair_provider = ECPair.fromWIF(process.env.providerWIF, network);
 
-const delay_time = 0x00400001; // 512 seconds
-const staking_script_asm = [
-  bitcoin.script.number.encode(delay_time),
-  bitcoin.opcodes.OP_CHECKSEQUENCEVERIFY,
-  bitcoin.opcodes.OP_DROP,
-  toXOnly(keypair_user.publicKey),
-  bitcoin.opcodes.OP_CHECKSIG,
-];
-
-const staking_script = bitcoin.script.compile(staking_script_asm);
+const delay_time = 1; // 1 unit = 512s
+console.log(sequence(delay_time))
+const staking_script_asm = `01004000 OP_CHECKSEQUENCEVERIFY OP_DROP ${toXOnly(keypair_user.publicKey).toString(
+  "hex"
+)} OP_CHECKSIG`;
+const staking_script = bitcoin.script.fromASM(staking_script_asm);
 
 // Slashing script: 2-of-3 spend mulsig
 // Stack: [User - Scalar - Provider
 /*
 WARNING: tapscript disabled OP_CHECKMULTISIG and OP_CHECKMULTISIGVERIFY opcodes 
 Let use OP_CHECKSIGADD
-Material: https://github.com/babylonchain/btc-staking-ts/blob/main/src/utils/stakingScript.ts
+THIS SCRIPT is not work
 */
-const threshold = 2;
-const slashing_script_asm = [
-  toXOnly(keypair_user.publicKey),
-  bitcoin.opcodes.OP_CHECKSIG,
-  toXOnly(keypair_scalar.publicKey),
-  bitcoin.opcodes.OP_CHECKSIGADD,
-  toXOnly(keypair_provider.publicKey),
-  bitcoin.opcodes.OP_CHECKSIGADD,
-  bitcoin.script.number.encode(threshold),
-  bitcoin.opcodes.OP_GREATERTHANOREQUAL,
-];
+const slashing_script_asm = `${toXOnly(keypair_user.publicKey).toString(
+  "hex"
+)} OP_CHECKSIG`;
 
-const slashing_script = bitcoin.script.compile(slashing_script_asm);
+const slashing_script = bitcoin.script.fromASM(slashing_script_asm);
 
 // Construct taptree
 const LEAF_VERSION_TAPSCRIPT = 0xc0;
@@ -93,8 +83,8 @@ const scriptTree = [
 
 // Construct redeem
 // Tapleaf version: https://github.com/bitcoin/bips/blob/master/bip-0341.mediawiki
-const slashing_redeem = {
-  output: slashing_script,
+const staking_redeem = {
+  output: staking_script,
   redeemVersion: LEAF_VERSION_TAPSCRIPT,
 };
 
@@ -102,21 +92,18 @@ const slashing_redeem = {
 const custom_tapLeaf_stakingPart = bitcoin.payments.p2tr({
   internalPubkey: toXOnly(keypair_internal.publicKey),
   scriptTree,
-  redeem: slashing_redeem,
+  redeem: staking_redeem,
   network: network,
 });
 
 // tapLeaf information
 const tapLeafScript = {
-  leafVersion: slashing_redeem.redeemVersion,
-  script: slashing_redeem.output,
+  leafVersion: staking_redeem.redeemVersion,
+  script: staking_redeem.output,
   // why last witness:
   // + Script Execution
   // + Leaf Script Validation
-  controlBlock:
-    custom_tapLeaf_stakingPart.witness[
-      custom_tapLeaf_stakingPart.witness.length - 1
-    ],
+  controlBlock: custom_tapLeaf_stakingPart.witness[custom_tapLeaf_stakingPart.witness.length - 1],
 };
 async function createTransaction() {
   const txb = new bitcoin.Psbt({ network });
@@ -125,18 +112,18 @@ async function createTransaction() {
   txb.setLocktime(0);
 
   const preUTXO = bitcoin.Transaction.fromHex(
-    "02000000000101e7e5ab26e7df7f60a0f32324b63e61b356883d5541a4083fb2a4f405c07cc7ba0100000000ffffffef02a08601000000000022512011b16c0dda755f6a932a9fd673107d852faa16fdb16831d3c5bd90626bd4171c400d030000000000160014d6daf3fba915fed7eb3a88d850faccb9fd00db1702483045022100e14cf67c0539ea98a09a252f9fe8f7220af815d4c4102afe2d8b1b8821181e3f02206072ed6bcfbebcb680b2da1c32a50279004a2f70c53991fc8f6832ceb388c94b0121022ae24aecee27d2f6b4c80836dfe1e86a6f9a14a4dd3b1d269bdeda4e6834e82f00000000"
+    "020000000001011c14a7899d099fdd04faae4626bdb2e596d6fa141b1eddfa790fe909dae176140000000000ffffffef02a086010000000000225120deff53f2c98c021c92ae710a79d6b804736223bdbfd1e1758b8816745707729f801a060000000000160014d6daf3fba915fed7eb3a88d850faccb9fd00db17024730440220732d9f4e2b2a1701b19a10face55025f9a4442c395f0ed2b683fb3f2fecd4f93022016ab93e1bf8e242afbce9af93529f109b7256d011e3f334e862e4a1054dc13f50121022ae24aecee27d2f6b4c80836dfe1e86a6f9a14a4dd3b1d269bdeda4e6834e82f00000000"
   );
   txb.addInputs([
     {
-      hash: "7797eaed5c31f872b99f6fa7a9f123f4bf8bd729154301aac4c33ff3c6ed548c",
+      hash: "bac77cc005f4a4b23f08a441553d8856b3613eb62423f3a0607fdfe726abe5e7",
       index: 0, // Index of the output in the previous transaction
       witnessUtxo: {
         script: preUTXO.outs[0].script,
         value: preUTXO.outs[0].value,
       },
       tapLeafScript: [tapLeafScript],
-      sequence: 0xfffffffd, // big endian
+      sequence: 0x00400001, // big endian
     },
   ]);
   txb.addOutputs([
@@ -145,23 +132,9 @@ async function createTransaction() {
       value: preUTXO.outs[0].value - 50000, // Amount in satoshis
     },
   ]);
-  const keypair_random = ECPair.makeRandom({network});
-  txb.signInput(0, keypair_user);
 
-  txb.signInput(0, keypair_scalar);
-
-  // const customFinalizer = (_inputIndex, input) => {
-  //   const scriptSolution = [input.tapScriptSig[2].signature,input.tapScriptSig[1].signature,input.tapScriptSig[0].signature];
-  //   const witness = scriptSolution
-  //     .concat(tapLeafScript.script)
-  //     .concat(tapLeafScript.controlBlock);
-
-  //   return {
-  //     finalScriptWitness: witnessStackToScriptWitness(witness),
-  //   };
-  // };
-
-  txb.finalizeInput(0);
+  txb.signInput(0, keypair_user); 
+  txb.finalizeAllInputs();
 
   const tx = txb.extractTransaction();
   return tx.toHex();

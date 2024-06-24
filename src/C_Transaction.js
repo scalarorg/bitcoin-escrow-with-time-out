@@ -19,12 +19,7 @@ const ecc = require("tiny-secp256k1");
 
 // utils
 const { tweakSigner, toXOnly } = require("./util/taproot-utils");
-const { API, NumtoHex } = require("./util/utils");
-const { p2pk } = require("bitcoinjs-lib/src/payments");
-const {
-  witnessStackToScriptWitness,
-} = require("./util/witness_stack_to_script_witness");
-const { Hex } = require("bitcoinjs-lib/src/types");
+const { API } = require("./util/utils");
 
 // Initialize the ECC library
 bitcoin.initEccLib(ecc);
@@ -48,33 +43,37 @@ const keypair_user = ECPair.fromWIF(process.env.userWIF, network);
 const keypair_scalar = ECPair.fromWIF(process.env.scalarWIF, network);
 const keypair_provider = ECPair.fromWIF(process.env.providerWIF, network);
 
-const delay_block = 2;
+const delay_time = 0x00400001; // 512 seconds
+const staking_script_asm = [
+  bitcoin.script.number.encode(delay_time),
+  bitcoin.opcodes.OP_CHECKSEQUENCEVERIFY,
+  bitcoin.opcodes.OP_DROP,
+  toXOnly(keypair_user.publicKey),
+  bitcoin.opcodes.OP_CHECKSIG,
+];
 
-const staking_script_asm = `${NumtoHex(
-  delay_block
-)} OP_CHECKSEQUENCEVERIFY OP_DROP ${toXOnly(keypair_user.publicKey).toString(
-  "hex"
-)} OP_CHECKSIG`;
+const staking_script = bitcoin.script.compile(staking_script_asm);
 
-const staking_script = bitcoin.script.fromASM(staking_script_asm);
 // Slashing script: 2-of-3 spend mulsig
 // Stack: [User - Scalar - Provider
-const numberOfStaker = 3;
-const minimumOfStaker = 2;
 /*
 WARNING: tapscript disabled OP_CHECKMULTISIG and OP_CHECKMULTISIGVERIFY opcodes 
 Let use OP_CHECKSIGADD
-THIS SCRIPT is not work
+Material: https://github.com/babylonchain/btc-staking-ts/blob/main/src/utils/stakingScript.ts
 */
-const slashing_script_asm = `${NumtoHex(minimumOfStaker)} ${toXOnly(
-  keypair_user.publicKey
-).toString("hex")} ${toXOnly(keypair_scalar.publicKey).toString(
-  "hex"
-)} ${toXOnly(keypair_provider.publicKey).toString("hex")} ${NumtoHex(
-  numberOfStaker
-)} OP_CHECKMULTISIG`;
+const threshold = 2;
+const slashing_script_asm = [
+  toXOnly(keypair_user.publicKey),
+  bitcoin.opcodes.OP_CHECKSIG,
+  toXOnly(keypair_scalar.publicKey),
+  bitcoin.opcodes.OP_CHECKSIGADD,
+  toXOnly(keypair_provider.publicKey),
+  bitcoin.opcodes.OP_CHECKSIGADD,
+  bitcoin.script.number.encode(threshold),
+  bitcoin.opcodes.OP_GREATERTHANOREQUAL,
+];
 
-const slashing_script = bitcoin.script.fromASM(slashing_script_asm);
+const slashing_script = bitcoin.script.compile(slashing_script_asm);
 
 // Construct taptree
 const LEAF_VERSION_TAPSCRIPT = 0xc0;
@@ -114,28 +113,21 @@ async function createTransaction() {
   txb.setLocktime(0);
 
   const preUTXO = bitcoin.Transaction.fromHex(
-    "020000000001015ebc81a3e17a9c38fc1a505da980546829831d2c6e59ac9af986753705cd11910100000000fdffffff02f877080000000000160014d6daf3fba915fed7eb3a88d850faccb9fd00db177390fe5600000000160014dea5cec1d786dbfabab914bdf01a98d19a2f616502473044022040be7ccf5cbde991f5b53c35234b685143bee076438f029bce920e19722ae497022046914f76039c2b342d7c5e867720c3a389cf81d6fd381d4cb305ee7422a654d1012102c22a22aa02faf47edc07a35e7ab41110d66e77308c7563e667541b1672fd3f5000000000"
+    "020000000001011c14a7899d099fdd04faae4626bdb2e596d6fa141b1eddfa790fe909dae176140000000000ffffffef02a086010000000000225120deff53f2c98c021c92ae710a79d6b804736223bdbfd1e1758b8816745707729f801a060000000000160014d6daf3fba915fed7eb3a88d850faccb9fd00db17024730440220732d9f4e2b2a1701b19a10face55025f9a4442c395f0ed2b683fb3f2fecd4f93022016ab93e1bf8e242afbce9af93529f109b7256d011e3f334e862e4a1054dc13f50121022ae24aecee27d2f6b4c80836dfe1e86a6f9a14a4dd3b1d269bdeda4e6834e82f00000000"
   );
   txb.addInputs([
     {
-      hash: "053808297472456c5f6a93a8cb06bd4feebe1cdbf73d96b2c03ea20f2f93b990",
-      index: 0, // Index of the output in the previous transaction
+      hash: "bac77cc005f4a4b23f08a441553d8856b3613eb62423f3a0607fdfe726abe5e7",
+      index: 1, // Index of the output in the previous transaction
       witnessUtxo: {
-        script: preUTXO.outs[0].script,
-        value: preUTXO.outs[0].value,
+        script: preUTXO.outs[1].script,
+        value: preUTXO.outs[1].value,
       },
-      sequence: 0xfffffffd, // big endian
+      // make sure this nsequence must less than 0xEFFFFFFF to ensure CSV and CLTV can be used
+      sequence: 0xefffffff, // big endian
     },
   ]);
   txb.addOutputs([
-    {
-      address: script_p2tr.address,
-      value: 100000, // Amount in satoshis
-    },
-    {
-      address: script_p2tr.address,
-      value: 100000, // Amount in satoshis
-    },
     {
       address: script_p2tr.address,
       value: 100000, // Amount in satoshis
@@ -145,6 +137,7 @@ async function createTransaction() {
       value: 200000, // Amount in satoshis
     },
   ]);
+
   const keyPair_signInput = ECPair.fromWIF(process.env.changeWIF, network);
   txb.signAllInputs(keyPair_signInput);
   txb.finalizeAllInputs();

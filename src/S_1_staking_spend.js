@@ -20,9 +20,6 @@ const ecc = require("tiny-secp256k1");
 // utils
 const { tweakSigner, toXOnly } = require("./util/taproot-utils");
 const { API } = require("./util/utils");
-const {
-  witnessStackToScriptWitness,
-} = require("./util/witness_stack_to_script_witness");
 
 // Initialize the ECC library
 bitcoin.initEccLib(ecc);
@@ -93,8 +90,8 @@ const scriptTree = [
 
 // Construct redeem
 // Tapleaf version: https://github.com/bitcoin/bips/blob/master/bip-0341.mediawiki
-const slashing_redeem = {
-  output: slashing_script,
+const staking_redeem = {
+  output: staking_script,
   redeemVersion: LEAF_VERSION_TAPSCRIPT,
 };
 
@@ -102,21 +99,18 @@ const slashing_redeem = {
 const custom_tapLeaf_stakingPart = bitcoin.payments.p2tr({
   internalPubkey: toXOnly(keypair_internal.publicKey),
   scriptTree,
-  redeem: slashing_redeem,
+  redeem: staking_redeem,
   network: network,
 });
 
 // tapLeaf information
 const tapLeafScript = {
-  leafVersion: slashing_redeem.redeemVersion,
-  script: slashing_redeem.output,
+  leafVersion: staking_redeem.redeemVersion,
+  script: staking_redeem.output,
   // why last witness:
   // + Script Execution
   // + Leaf Script Validation
-  controlBlock:
-    custom_tapLeaf_stakingPart.witness[
-      custom_tapLeaf_stakingPart.witness.length - 1
-    ],
+  controlBlock: custom_tapLeaf_stakingPart.witness[custom_tapLeaf_stakingPart.witness.length - 1],
 };
 async function createTransaction() {
   const txb = new bitcoin.Psbt({ network });
@@ -136,7 +130,7 @@ async function createTransaction() {
         value: preUTXO.outs[0].value,
       },
       tapLeafScript: [tapLeafScript],
-      sequence: 0xfffffffd, // big endian
+      sequence: delay_time, // big endian
     },
   ]);
   txb.addOutputs([
@@ -145,23 +139,9 @@ async function createTransaction() {
       value: preUTXO.outs[0].value - 50000, // Amount in satoshis
     },
   ]);
-  const keypair_random = ECPair.makeRandom({network});
-  txb.signInput(0, keypair_user);
 
-  txb.signInput(0, keypair_scalar);
-
-  // const customFinalizer = (_inputIndex, input) => {
-  //   const scriptSolution = [input.tapScriptSig[2].signature,input.tapScriptSig[1].signature,input.tapScriptSig[0].signature];
-  //   const witness = scriptSolution
-  //     .concat(tapLeafScript.script)
-  //     .concat(tapLeafScript.controlBlock);
-
-  //   return {
-  //     finalScriptWitness: witnessStackToScriptWitness(witness),
-  //   };
-  // };
-
-  txb.finalizeInput(0);
+  txb.signInput(0, keypair_user); 
+  txb.finalizeAllInputs();
 
   const tx = txb.extractTransaction();
   return tx.toHex();

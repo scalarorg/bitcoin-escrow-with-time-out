@@ -19,12 +19,7 @@ const ecc = require("tiny-secp256k1");
 
 // utils
 const { tweakSigner, toXOnly } = require("./util/taproot-utils");
-const { API, NumtoHex } = require("./util/utils");
-const { p2pk } = require("bitcoinjs-lib/src/payments");
-const {
-  witnessStackToScriptWitness,
-} = require("./util/witness_stack_to_script_witness");
-const { Hex } = require("bitcoinjs-lib/src/types");
+const { API } = require("./util/utils");
 
 // Initialize the ECC library
 bitcoin.initEccLib(ecc);
@@ -48,28 +43,37 @@ const keypair_user = ECPair.fromWIF(process.env.userWIF, network);
 const keypair_scalar = ECPair.fromWIF(process.env.scalarWIF, network);
 const keypair_provider = ECPair.fromWIF(process.env.providerWIF, network);
 
-const delay_block = 2;
+const delay_time = 0x00400001; // 512 seconds
+const staking_script_asm = [
+  bitcoin.script.number.encode(delay_time),
+  bitcoin.opcodes.OP_CHECKSEQUENCEVERIFY,
+  bitcoin.opcodes.OP_DROP,
+  toXOnly(keypair_user.publicKey),
+  bitcoin.opcodes.OP_CHECKSIG,
+];
 
-const staking_script_asm = `${NumtoHex(
-  delay_block
-)} OP_CHECKSEQUENCEVERIFY OP_DROP ${toXOnly(keypair_user.publicKey).toString(
-  "hex"
-)} OP_CHECKSIG`;
+const staking_script = bitcoin.script.compile(staking_script_asm);
 
-const staking_script = bitcoin.script.fromASM(staking_script_asm);
 // Slashing script: 2-of-3 spend mulsig
 // Stack: [User - Scalar - Provider
-const numberOfStaker = 3;
-const minimumOfStaker = 2;
-const slashing_script_asm = `${NumtoHex(minimumOfStaker)} ${toXOnly(
-  keypair_user.publicKey
-).toString("hex")} ${toXOnly(keypair_scalar.publicKey).toString(
-  "hex"
-)} ${toXOnly(keypair_provider.publicKey).toString("hex")} ${NumtoHex(
-  numberOfStaker
-)} OP_CHECKMULTISIG`;
+/*
+WARNING: tapscript disabled OP_CHECKMULTISIG and OP_CHECKMULTISIGVERIFY opcodes 
+Let use OP_CHECKSIGADD
+Material: https://github.com/babylonchain/btc-staking-ts/blob/main/src/utils/stakingScript.ts
+*/
+const threshold = 2;
+const slashing_script_asm = [
+  toXOnly(keypair_user.publicKey),
+  bitcoin.opcodes.OP_CHECKSIG,
+  toXOnly(keypair_scalar.publicKey),
+  bitcoin.opcodes.OP_CHECKSIGADD,
+  toXOnly(keypair_provider.publicKey),
+  bitcoin.opcodes.OP_CHECKSIGADD,
+  bitcoin.script.number.encode(threshold),
+  bitcoin.opcodes.OP_GREATERTHANOREQUAL,
+];
 
-const slashing_script = bitcoin.script.fromASM(slashing_script_asm);
+const slashing_script = bitcoin.script.compile(slashing_script_asm);
 
 // Construct taptree
 const LEAF_VERSION_TAPSCRIPT = 0xc0;
@@ -101,7 +105,6 @@ const slashing_redeem = {
   output: slashing_script,
   redeemVersion: LEAF_VERSION_TAPSCRIPT,
 };
-
 async function createTransaction() {
   const txb = new bitcoin.Psbt({ network });
   // Default setting
@@ -109,11 +112,11 @@ async function createTransaction() {
   txb.setLocktime(0);
 
   const preUTXO = bitcoin.Transaction.fromHex(
-    "0200000000010190b9932f0fa23ec0b2963df7db1cbeee4fbd06cba8936a5f6c457274290838050000000000fdffffff04a08601000000000022512034ccbb62218308dddd0a1f70ec311ff41d1fe340c2ae402fba20da6c24480470a08601000000000022512034ccbb62218308dddd0a1f70ec311ff41d1fe340c2ae402fba20da6c24480470a08601000000000022512034ccbb62218308dddd0a1f70ec311ff41d1fe340c2ae402fba20da6c24480470400d030000000000160014d6daf3fba915fed7eb3a88d850faccb9fd00db170247304402205dcae40c3422f5373e8d84aa76e785993b0165a7b0dc702832bf6e0efc2b1b4f02201eddc1f7acaa73d2ad63780825248eaecc4a7adefb48dc167f26b34b0af3639e0121022ae24aecee27d2f6b4c80836dfe1e86a6f9a14a4dd3b1d269bdeda4e6834e82f00000000"
+    "02000000000101e7e5ab26e7df7f60a0f32324b63e61b356883d5541a4083fb2a4f405c07cc7ba0100000000ffffffef02a08601000000000022512011b16c0dda755f6a932a9fd673107d852faa16fdb16831d3c5bd90626bd4171c400d030000000000160014d6daf3fba915fed7eb3a88d850faccb9fd00db1702483045022100e14cf67c0539ea98a09a252f9fe8f7220af815d4c4102afe2d8b1b8821181e3f02206072ed6bcfbebcb680b2da1c32a50279004a2f70c53991fc8f6832ceb388c94b0121022ae24aecee27d2f6b4c80836dfe1e86a6f9a14a4dd3b1d269bdeda4e6834e82f00000000"
   );
   txb.addInputs([
     {
-      hash: "7b1e01733cf7e9f8d493a09fc5a3bbe1b19f72379a7155fc4553f6e2983f567d",
+      hash: "7797eaed5c31f872b99f6fa7a9f123f4bf8bd729154301aac4c33ff3c6ed548c",
       index: 0, // Index of the output in the previous transaction
       witnessUtxo: {
         script: preUTXO.outs[0].script,
@@ -142,9 +145,9 @@ async function createTransaction() {
 const res = createTransaction()
   .then((transaction) => {
     console.log(transaction);
-    API(process.env.url_internal, "sendrawtransaction", transaction);
+    // API(process.env.url_internal, "sendrawtransaction", transaction);
     // Require to test
-    // API(process.env.url_internal, "testmempoolaccept", [transaction]);
+    API(process.env.url_internal, "testmempoolaccept", [transaction]);
   })
   .catch((error) => {
     console.log(error);
