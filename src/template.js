@@ -1,15 +1,3 @@
-/*
-REFERENCES:
-  + https://medium.com/@nagasha/how-to-build-and-broadcast-a-bitcoin-transaction-using-bitcoinjs-bitcoinjs-lib-on-testnet-2d9c8ac725d6
-  + https://www.youtube.com/watch?v=fE-PSB9ndI4
-  + https://mempool.space/testnet/docs/api/rest#get-address-transactions
-  # main: https://medium.com/@bitcoindeezy/bitcoin-basics-programming-with-bitcoinjs-lib-4a69218c0431
-  # taproot: + https://dev.to/eunovo/a-guide-to-creating-taproot-scripts-with-bitcoinjs-lib-4oph
-             + https://ordinallabs.medium.com/understanding-taproot-addresses-a-simple-guide-5475da0fb3d3
-  # specific for taproot spend: 
-             + https://github.com/bitcoinjs/bitcoinjs-lib/blob/master/test/integration/taproot.spec.ts
-*/
-require("dotenv").config();
 const mempoolJS = require("@mempool/mempool.js");
 const axios = require("axios");
 
@@ -41,10 +29,14 @@ const network = bitcoin.networks.testnet;
 const keypair_internal = ECPair.fromWIF(process.env.internalWIF, network);
 
 const keypair_user = ECPair.fromWIF(process.env.userWIF, network);
-const keypair_scalar = ECPair.fromWIF(process.env.scalarWIF, network);
-const keypair_provider = ECPair.fromWIF(process.env.providerWIF, network);
+const keypair_thresholder = ECPair.fromWIF(process.env.thresholder, network);
 
-const delay_time = 0x00400001; // 512 seconds
+/*  <delay time> OP_CHECKSEQUENCEVERIFY 
+    OP_DROP 
+    <publicKey>
+    OP_CHECKSIG
+*/
+const delay_time = 0x00400001 // 512 seconds
 const staking_script_asm = [
   bitcoin.script.number.encode(delay_time),
   bitcoin.opcodes.OP_CHECKSEQUENCEVERIFY,
@@ -52,7 +44,6 @@ const staking_script_asm = [
   toXOnly(keypair_user.publicKey),
   bitcoin.opcodes.OP_CHECKSIG,
 ];
-
 const staking_script = bitcoin.script.compile(staking_script_asm);
 
 // Slashing script: 2-of-3 spend mulsig
@@ -60,8 +51,10 @@ const staking_script = bitcoin.script.compile(staking_script_asm);
 // Case: User + Provider
 /*
 WARNING: tapscript disabled OP_CHECKMULTISIG and OP_CHECKMULTISIGVERIFY opcodes 
+Information: https://github.com/bitcoin/bips/blob/master/bip-0342.mediawiki
+
 Let use OP_CHECKSIGADD
-Material: https://github.com/babylonchain/btc-staking-ts/blob/main/src/utils/stakingScript.ts
+Material: + https://github.com/babylonchain/btc-staking-ts/blob/main/src/utils/stakingScript.ts
 NOTE:
 It seems that OP_CHECKSIGADD not work as we want:
 let split script in to 3 path:
@@ -71,57 +64,34 @@ let split script in to 3 path:
 */
 let threshold = 2;
 
-const UC_slashing_script_asm = [
+const sample_slashing_script_asm = [
   toXOnly(keypair_user.publicKey),
   bitcoin.opcodes.OP_CHECKSIG,
-  toXOnly(keypair_scalar.publicKey),
+  toXOnly(keypair_thresholder.publicKey),
   bitcoin.opcodes.OP_CHECKSIGADD,
   bitcoin.script.number.encode(threshold),
   bitcoin.opcodes.OP_NUMEQUAL,
 ];
-const UC_slashing_scrip = bitcoin.script.compile(UC_slashing_script_asm);
+/* 
+    <pubkey> OP_CHECKSIG <pubkey> OP_CHECKSIGADD <num of thresholder> OP_NUMEQUAL
+*/
 
-const UP_slashing_script_asm = [
-  toXOnly(keypair_user.publicKey),
-  bitcoin.opcodes.OP_CHECKSIG,
-  toXOnly(keypair_provider.publicKey),
-  bitcoin.opcodes.OP_CHECKSIGADD,
-  bitcoin.script.number.encode(threshold),
-  bitcoin.opcodes.OP_NUMEQUAL,
-];
-const UP_slashing_scrip = bitcoin.script.compile(UP_slashing_script_asm);
+const sample_slashing_scrip = bitcoin.script.compile(sample_slashing_script_asm);
 
-const CP_slashing_script_asm = [
-  toXOnly(keypair_scalar.publicKey),
-  bitcoin.opcodes.OP_CHECKSIG,
-  toXOnly(keypair_provider.publicKey),
-  bitcoin.opcodes.OP_CHECKSIGADD,
-  bitcoin.script.number.encode(threshold),
-  bitcoin.opcodes.OP_NUMEQUAL,
-];
-const CP_slashing_scrip = bitcoin.script.compile(CP_slashing_script_asm);
-// Construct taptree
-const LEAF_VERSION_TAPSCRIPT = 0xc0;
 
 // Construct taptree - must be in MAST from
 const scriptTree = [
-  {
-    output: staking_script,
-  },
-  [
-    {
-      output: UC_slashing_scrip,
-    },
-    [
-      {
-        output: UP_slashing_scrip,
-      },
-      {
-        output: CP_slashing_scrip,
-      },
-    ],
-  ],
+    /* 
+                                    Merkle Root 
+                    H(A,B)                                 H(C,D)
+            Script(A)       Script(B)            H(E,F)                  H(G)
+                                        Script(E)     Script(F)       Script(G)  
+    MAST Form
+    */
 ];
+
+// only for redeem version
+const LEAF_VERSION_TAPSCRIPT = 0xc0;
 
 // Gen taproot address
 const script_p2tr = bitcoin.payments.p2tr({
@@ -131,14 +101,17 @@ const script_p2tr = bitcoin.payments.p2tr({
 });
 
 async function createTransaction() {
+  // psbt information, bip174: https://github.com/bitcoin/bips/blob/master/bip-0174.mediawiki#user-content-Introduction
   const txb = new bitcoin.Psbt({ network });
   // Default setting
   txb.setVersion(2);
   txb.setLocktime(0);
 
+  // example
   const preUTXO = bitcoin.Transaction.fromHex(
     "02000000000101c8c3b8103a6bcbe69e3802d5a2de343cb0ac7dc7b164bd0cb3f778a5007ada6c0100000000fdffffff02f877080000000000160014d6daf3fba915fed7eb3a88d850faccb9fd00db174f49130000000000160014dea5cec1d786dbfabab914bdf01a98d19a2f61650247304402204bd537029354c4911fd22843ba9df3ac9bb5f01ec2484c84578b10417c9aa4bd02202c456fdcc78eeb59d71eff83f649ec2e699abe33554298d9f30fa787a7812f15012102c22a22aa02faf47edc07a35e7ab41110d66e77308c7563e667541b1672fd3f5000000000"
   );
+  // can use addInput to add 1 input 
   txb.addInputs([
     {
       hash: "f98e2bbb047cda2730b9c73ed559e0f2af43af392e7d671cde955875a4eeb2ef",
@@ -147,37 +120,30 @@ async function createTransaction() {
         script: preUTXO.outs[0].script,
         value: preUTXO.outs[0].value,
       },
-      // make sure this nsequence must less than 0xEFFFFFFF to ensure CSV and CLTV can be used
-      sequence: 0xefffffff, // big endian
+      /*
+        <=0xFFFFFFFE — Locktime.
+        <=0xFFFFFFFD — Replace-By-Fee (RBF).
+        <=0xEFFFFFFF — Relative Locktime:
+            + 0x00000000 to 0x0000FFFF — Blocks.
+            + 0x00400000 to 0x0040FFFF — Time.
+      */
+      sequence: 0xffffffff, // big endian
     },
   ]);
+  let value
   txb.addOutputs([
     {
-      address: script_p2tr.address,
-      value: 100000, // Amount in satoshis
-    },
-    {
-      address: script_p2tr.address,
-      value: 100000, // Amount in satoshis
-    },
-    {
-      address: script_p2tr.address,
-      value: 100000, // Amount in satoshis
-    },
-    {
-      address: script_p2tr.address,
-      value: 100000, // Amount in satoshis
-    },
-    {
-      address: script_p2tr.address,
-      value: 100000, // Amount in satoshis
+      address: process.env.changeAddress,
+      value: value, // Amount in satoshis
     },
   ]);
 
   const keyPair_signInput = ECPair.fromWIF(process.env.changeWIF, network);
-  txb.signAllInputs(keyPair_signInput);
+  // Sign with sighash default signInput(index, keypair, sighashType)
+  // BIP341 for more information: https://github.com/bitcoin/bips/blob/master/bip-0341.mediawiki#cite_note-21
+  txb.signInput(0,keyPair_signInput);
   txb.finalizeAllInputs();
-
+  
   const tx = txb.extractTransaction();
   return tx.toHex();
 }
@@ -185,9 +151,8 @@ const res = createTransaction()
   .then((transaction) => {
     console.log(transaction);
     // API(process.env.url_internal, "sendrawtransaction", transaction);
-    API(process.env.url_internal, "testmempoolaccept", [transaction]);
+    // API(process.env.url_internal, "testmempoolaccept", [transaction]);
   })
   .catch((error) => {
     console.log(error);
   });
-
