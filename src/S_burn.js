@@ -167,7 +167,7 @@ async function createTransaction(redeem) {
   txb.setLocktime(0);
 
   const preUTXO = bitcoin.Transaction.fromHex(
-    "0200000000010192a7b6243647f6304a88d512c2b142c6a13dc7ff004adaaa8f9825c138f6670c0000000000ffffffef027017000000000000225120032de3625c66e422222c934742174caf0b7177d547c82e44d96874d729f5f0960000000000000000160014d6daf3fba915fed7eb3a88d850faccb9fd00db170247304402202ebda0e38e09550d8f619dff403c257e3fe26df09292ad2edcdb9513c9c1c703022063edc5b937864b3b357e8fd669bbd91d9540bf97ce298f92e26419083cb30d240121022ae24aecee27d2f6b4c80836dfe1e86a6f9a14a4dd3b1d269bdeda4e6834e82f00000000"
+    "0200000000010187ac3d5f31e1477e8f71acbc1dec0ed5afdc86ccf30d88fd194509b4e44d0e5f0000000000ffffffef031027000000000000225120032de3625c66e422222c934742174caf0b7177d547c82e44d96874d729f5f0960000000000000000536a4c50aaaaaaaaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbccccccccccccccccccccccccccccccccccccccccffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7094000000000000160014d6daf3fba915fed7eb3a88d850faccb9fd00db1702483045022100b99250c01e96ceb1d1d5f134c07d980aaf9deac4cd80da1c177effbabbe511e202204ecd7c61a6972a4de78d08ed9dd6e21ef973fb11dfa79083df1215cc26ca3bf10121022ae24aecee27d2f6b4c80836dfe1e86a6f9a14a4dd3b1d269bdeda4e6834e82f00000000"
   );
   txb.addInputs([
     {
@@ -262,10 +262,10 @@ async function createTransaction(redeem) {
   const tx = txb.extractTransaction();
   return tx.toHex();
 }
-const res = createTransaction(burn_without_dApp_redeem)
+const res = createTransaction(burn_redeem)
   .then((transaction) => {
     // console.log(transaction);
-    // API(process.env.url_internal, "sendrawtransaction", transaction);
+    API(process.env.url_internal, "sendrawtransaction", transaction);
     // Require to test
     // API(process.env.url_internal, "testmempoolaccept", [transaction]);
   })

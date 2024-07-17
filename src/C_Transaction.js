@@ -119,6 +119,25 @@ const script_p2tr = bitcoin.payments.p2tr({
   network,
 });
 
+// create embeded script
+
+// chainID random for 8 bytes
+let chainID = Buffer.from("aaaaaaaaaaaaaaaa", "hex");
+// address random for 20 bytes
+let address_from = Buffer.from("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "hex")
+// address random for 20 bytes
+let address_to = Buffer.from("cccccccccccccccccccccccccccccccccccccccc", "hex")
+// amount random for 32 bytes
+let amount = Buffer.from("ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", "hex")
+// serialize
+let data = Buffer.concat([chainID, address_from, address_to, amount])
+const embeded_data = [
+  bitcoin.opcodes.OP_RETURN, // OP_RETURN should be a single byte
+  data
+]
+const script = bitcoin.script.compile(embeded_data)
+const script_embeded = bitcoin.payments.embed({ data: [script], network: network })
+
 async function createTransaction() {
   const txb = new bitcoin.Psbt({ network });
   // Default setting
@@ -126,7 +145,7 @@ async function createTransaction() {
   txb.setLocktime(0);
 
   const preUTXO = bitcoin.Transaction.fromHex(
-    "0200000000010127905ed6760af2eec038bf3cf45c4c3a95daf2e6d27161c4c811d2511bd239c30000000000ffffffef01401f000000000000160014d6daf3fba915fed7eb3a88d850faccb9fd00db1705405b95f8876eb74d085ddc632feb2b0af53f539fbd4c38e8af727f7de544c34b51cc163fd97769915088661f83239f563bfecf64eeaadb7cc35ca3a04566fa3c0f40faf74e43745ae217ad057ababd43570e1aa12cc3453bd2203471bdca84381ff372ea35b0558eff69573dc19cfdb822401a86098acd22639a7b4afd983d579be540ba5f9acd48a0eecd44b2e6770c8f5af3de4dca6a143fa267dc7882395af2f6f19966e2aa150e27d15a8d41134d45f68a27d89d3908222bee4d4fb465a2cbe19666202ae24aecee27d2f6b4c80836dfe1e86a6f9a14a4dd3b1d269bdeda4e6834e82fad20b40c15a2294af054263240ceb2acfc724382c5b56e780435382a109b39eeadd5ad20ca6a77df4f9afa2f67f4800f42859a240ca4fa4f1cf22f1782c7bfb564efd341ac41c050929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0ec1c1b1947117a2f8072ea6b842a4d077494daf40560d105d03591bfead6189e00000000"
+    "0200000000010109b41632070f1bc62c6dc2bfe775006d753c3c7640399058e67f10062c19e04e0200000000fdffffff0150c3000000000000160014d6daf3fba915fed7eb3a88d850faccb9fd00db170440f63df2c4b8480de994ef793d86bd75a759e14549c5bef28be4e85b5439b55ec98178f3ddaf67ca5525f4d0344a03a80c2152a7ee0f9f6f204f7a1d60bff05e8940558609792be7cf60177b88218328e68c30be8d3c9dbade33f15d443e5cb22aefc002987585e0f274e312be601841febb6b9ec00e9933e1d9a16a13eda4840b7246202ae24aecee27d2f6b4c80836dfe1e86a6f9a14a4dd3b1d269bdeda4e6834e82fac20b40c15a2294af054263240ceb2acfc724382c5b56e780435382a109b39eeadd5ba529c61c173b67c58970767eb6bfb99b8a48061ae7668a839b644b5e10902e3aaac1d2b45d856bd07eedf9858553327cf705fffbffc6fb24821a1e1dbe88513a9aae4ce0a1df8f18244a9dfd90a7dcacc2bf2a6cdad885ba56796a507fb538ff2cc03cbca00000000"
   );
   txb.addInputs([
     {
@@ -143,12 +162,17 @@ async function createTransaction() {
   txb.addOutputs([
     {
       address: script_p2tr.address,
-      value: 6000, // Amount in satoshis
+      value: 10000, // Amount in satoshis
+    },
+    {
+      script: script_embeded.data[0],
+      value: 0, // Amount in satoshis
     },
     {
       address: process.env.changeAddress,
-      value: 2000 - 2000,
+      value: 40000 - 2000,
     },
+    
   ]);
   const keyPair_signInput = ECPair.fromWIF(process.env.userWIF, network);
   txb.signAllInputs(keyPair_signInput);
@@ -160,8 +184,9 @@ const res = createTransaction()
   .then(async (transaction) => {
     // console.log(transaction)
     // API(process.env.url_internal, "sendrawtransaction", transaction);
-    // API(process.env.url_internal, "testmempoolaccept", [transaction]);
+    API(process.env.url_internal, "testmempoolaccept", [transaction]);
   })
   .catch((error) => {
     console.log(error);
   });
+
