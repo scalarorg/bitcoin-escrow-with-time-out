@@ -10,16 +10,14 @@ REFERENCES:
              + https://github.com/bitcoinjs/bitcoinjs-lib/blob/master/test/integration/taproot.spec.ts
 */
 require("dotenv").config();
-const mempoolJS = require("@mempool/mempool.js");
-const axios = require("axios");
 
 const bitcoin = require("bitcoinjs-lib");
 const ECPairFactory = require("ecpair").default;
 const ecc = require("tiny-secp256k1");
 
 // utils
-const { tweakSigner, toXOnly } = require("./util/taproot-utils");
-const { API } = require("./util/utils");
+const { tweakSigner, toXOnly } = require("../util/taproot-utils");
+const { API, feesRecommended } = require("../util/utils");
 
 // Initialize the ECC library
 bitcoin.initEccLib(ecc);
@@ -30,102 +28,93 @@ const network = bitcoin.networks.testnet;
 // GEN address taproot for 3 spend: 1 key path - 2 script path
 /*
 3 Covenant staker:
-  User - Scalar - Provider
+  User - dApp - custodials...
   3 path:
-    - internal key: Forcing withdraw - (Schnorr signature for User + Scalar + Provider)
+    - internal key: NUMS vector
     - Script path:
-      + Staking: User withdraw after time lock
-      + Slashing: 2-of-3 spend: User - Scalar - Provider 
+      + Burn: User + dApp + custodials...
+      + slashing = Lost private keys: dApp + custodials...
+      + Burn without dApp: User + custodials...
       
 */
-const keypair_internal = ECPair.fromWIF(process.env.internalWIF, network);
-
 const keypair_user = ECPair.fromWIF(process.env.userWIF, network);
-const keypair_scalar = ECPair.fromWIF(process.env.scalarWIF, network);
-const keypair_provider = ECPair.fromWIF(process.env.providerWIF, network);
+const keypair_dApp = ECPair.fromWIF(process.env.dAppWIF, network);
+const keypair_custodial1 = ECPair.fromWIF(process.env.custodial1WIF, network);
+const keypair_custodial2 = ECPair.fromWIF(process.env.custodial2WIF, network);
+const keypair_custodial3 = ECPair.fromWIF(process.env.custodial3WIF, network);
 
-const delay_time = 0x00400001; // 512 seconds
-const staking_script_asm = [
-  bitcoin.script.number.encode(delay_time),
-  bitcoin.opcodes.OP_CHECKSEQUENCEVERIFY,
-  bitcoin.opcodes.OP_DROP,
-  toXOnly(keypair_user.publicKey),
-  bitcoin.opcodes.OP_CHECKSIG,
-];
-
-const staking_script = bitcoin.script.compile(staking_script_asm);
-
-// Slashing script: 2-of-3 spend mulsig
-// Case: User + Scalar
-// Case: User + Provider
-/*
-WARNING: tapscript disabled OP_CHECKMULTISIG and OP_CHECKMULTISIGVERIFY opcodes 
-Let use OP_CHECKSIGADD
-Material: https://github.com/babylonchain/btc-staking-ts/blob/main/src/utils/stakingScript.ts
-NOTE:
-It seems that OP_CHECKSIGADD not work as we want:
-let split script in to 3 path:
- + User - Scalar
- + User - Provider
- + Scalar - Provider
-*/
 let threshold = 2;
 
-const UC_slashing_script_asm = [
+const burn_script_asm = [
   toXOnly(keypair_user.publicKey),
+  bitcoin.opcodes.OP_CHECKSIGVERIFY,
+  toXOnly(keypair_dApp.publicKey),
+  bitcoin.opcodes.OP_CHECKSIGVERIFY,
+  toXOnly(keypair_custodial1.publicKey),
   bitcoin.opcodes.OP_CHECKSIG,
-  toXOnly(keypair_scalar.publicKey),
+  toXOnly(keypair_custodial2.publicKey),
+  bitcoin.opcodes.OP_CHECKSIGADD,
+  toXOnly(keypair_custodial3.publicKey),
   bitcoin.opcodes.OP_CHECKSIGADD,
   bitcoin.script.number.encode(threshold),
-  bitcoin.opcodes.OP_NUMEQUAL,
+  bitcoin.opcodes.OP_GREATERTHANOREQUAL,
 ];
-const UC_slashing_scrip = bitcoin.script.compile(UC_slashing_script_asm);
+const burn_script = bitcoin.script.compile(burn_script_asm);
 
-const UP_slashing_script_asm = [
+const slashing_and_lost_key_script_asm = [
   toXOnly(keypair_user.publicKey),
+  bitcoin.opcodes.OP_CHECKSIGVERIFY,
+  toXOnly(keypair_custodial1.publicKey),
   bitcoin.opcodes.OP_CHECKSIG,
-  toXOnly(keypair_provider.publicKey),
+  toXOnly(keypair_custodial2.publicKey),
+  bitcoin.opcodes.OP_CHECKSIGADD,
+  toXOnly(keypair_custodial3.publicKey),
   bitcoin.opcodes.OP_CHECKSIGADD,
   bitcoin.script.number.encode(threshold),
-  bitcoin.opcodes.OP_NUMEQUAL,
+  bitcoin.opcodes.OP_GREATERTHANOREQUAL,
 ];
-const UP_slashing_scrip = bitcoin.script.compile(UP_slashing_script_asm);
+const slashing_lost_key_script = bitcoin.script.compile(
+  slashing_and_lost_key_script_asm
+);
 
-const CP_slashing_script_asm = [
-  toXOnly(keypair_scalar.publicKey),
+const burn_without_dApp_script_asm = [
+  toXOnly(keypair_user.publicKey),
+  bitcoin.opcodes.OP_CHECKSIGVERIFY,
+  toXOnly(keypair_custodial1.publicKey),
   bitcoin.opcodes.OP_CHECKSIG,
-  toXOnly(keypair_provider.publicKey),
+  toXOnly(keypair_custodial2.publicKey),
+  bitcoin.opcodes.OP_CHECKSIGADD,
+  toXOnly(keypair_custodial3.publicKey),
   bitcoin.opcodes.OP_CHECKSIGADD,
   bitcoin.script.number.encode(threshold),
-  bitcoin.opcodes.OP_NUMEQUAL,
+  bitcoin.opcodes.OP_GREATERTHANOREQUAL,
 ];
-const CP_slashing_scrip = bitcoin.script.compile(CP_slashing_script_asm);
-// Construct taptree
-const LEAF_VERSION_TAPSCRIPT = 0xc0;
+const burn_without_dApp_script = bitcoin.script.compile(
+  burn_without_dApp_script_asm
+);
 
 // Construct taptree - must be in MAST from
 const scriptTree = [
   {
-    output: staking_script,
+    output: burn_script,
   },
   [
     {
-      output: UC_slashing_scrip,
+      output: slashing_lost_key_script,
     },
-    [
-      {
-        output: UP_slashing_scrip,
-      },
-      {
-        output: CP_slashing_scrip,
-      },
-    ],
+    {
+      output: burn_without_dApp_script,
+    },
   ],
 ];
 
 // Gen taproot address
+const NUMS = Buffer.from(
+  "0250929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0",
+  "hex"
+);
 const script_p2tr = bitcoin.payments.p2tr({
-  internalPubkey: toXOnly(keypair_internal.publicKey),
+  internalPubkey: toXOnly(NUMS),
   scriptTree,
   network,
 });
@@ -137,11 +126,11 @@ async function createTransaction() {
   txb.setLocktime(0);
 
   const preUTXO = bitcoin.Transaction.fromHex(
-    "02000000000101c8c3b8103a6bcbe69e3802d5a2de343cb0ac7dc7b164bd0cb3f778a5007ada6c0100000000fdffffff02f877080000000000160014d6daf3fba915fed7eb3a88d850faccb9fd00db174f49130000000000160014dea5cec1d786dbfabab914bdf01a98d19a2f61650247304402204bd537029354c4911fd22843ba9df3ac9bb5f01ec2484c84578b10417c9aa4bd02202c456fdcc78eeb59d71eff83f649ec2e699abe33554298d9f30fa787a7812f15012102c22a22aa02faf47edc07a35e7ab41110d66e77308c7563e667541b1672fd3f5000000000"
+    "0200000000010127905ed6760af2eec038bf3cf45c4c3a95daf2e6d27161c4c811d2511bd239c30000000000ffffffef01401f000000000000160014d6daf3fba915fed7eb3a88d850faccb9fd00db1705405b95f8876eb74d085ddc632feb2b0af53f539fbd4c38e8af727f7de544c34b51cc163fd97769915088661f83239f563bfecf64eeaadb7cc35ca3a04566fa3c0f40faf74e43745ae217ad057ababd43570e1aa12cc3453bd2203471bdca84381ff372ea35b0558eff69573dc19cfdb822401a86098acd22639a7b4afd983d579be540ba5f9acd48a0eecd44b2e6770c8f5af3de4dca6a143fa267dc7882395af2f6f19966e2aa150e27d15a8d41134d45f68a27d89d3908222bee4d4fb465a2cbe19666202ae24aecee27d2f6b4c80836dfe1e86a6f9a14a4dd3b1d269bdeda4e6834e82fad20b40c15a2294af054263240ceb2acfc724382c5b56e780435382a109b39eeadd5ad20ca6a77df4f9afa2f67f4800f42859a240ca4fa4f1cf22f1782c7bfb564efd341ac41c050929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0ec1c1b1947117a2f8072ea6b842a4d077494daf40560d105d03591bfead6189e00000000"
   );
   txb.addInputs([
     {
-      hash: "f98e2bbb047cda2730b9c73ed559e0f2af43af392e7d671cde955875a4eeb2ef",
+      hash: preUTXO.getId(),
       index: 0, // Index of the output in the previous transaction
       witnessUtxo: {
         script: preUTXO.outs[0].script,
@@ -154,40 +143,25 @@ async function createTransaction() {
   txb.addOutputs([
     {
       address: script_p2tr.address,
-      value: 100000, // Amount in satoshis
+      value: 6000, // Amount in satoshis
     },
     {
-      address: script_p2tr.address,
-      value: 100000, // Amount in satoshis
-    },
-    {
-      address: script_p2tr.address,
-      value: 100000, // Amount in satoshis
-    },
-    {
-      address: script_p2tr.address,
-      value: 100000, // Amount in satoshis
-    },
-    {
-      address: script_p2tr.address,
-      value: 100000, // Amount in satoshis
+      address: process.env.changeAddress,
+      value: 2000 - 2000,
     },
   ]);
-
-  const keyPair_signInput = ECPair.fromWIF(process.env.changeWIF, network);
+  const keyPair_signInput = ECPair.fromWIF(process.env.userWIF, network);
   txb.signAllInputs(keyPair_signInput);
   txb.finalizeAllInputs();
-
   const tx = txb.extractTransaction();
   return tx.toHex();
 }
 const res = createTransaction()
-  .then((transaction) => {
-    console.log(transaction);
+  .then(async (transaction) => {
+    // console.log(transaction)
     // API(process.env.url_internal, "sendrawtransaction", transaction);
-    API(process.env.url_internal, "testmempoolaccept", [transaction]);
+    // API(process.env.url_internal, "testmempoolaccept", [transaction]);
   })
   .catch((error) => {
     console.log(error);
   });
-
