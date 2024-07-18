@@ -167,7 +167,7 @@ async function createTransaction(redeem) {
   txb.setLocktime(0);
 
   const preUTXO = bitcoin.Transaction.fromHex(
-    "0200000000010187ac3d5f31e1477e8f71acbc1dec0ed5afdc86ccf30d88fd194509b4e44d0e5f0000000000ffffffef031027000000000000225120032de3625c66e422222c934742174caf0b7177d547c82e44d96874d729f5f0960000000000000000536a4c50aaaaaaaaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbccccccccccccccccccccccccccccccccccccccccffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7094000000000000160014d6daf3fba915fed7eb3a88d850faccb9fd00db1702483045022100b99250c01e96ceb1d1d5f134c07d980aaf9deac4cd80da1c177effbabbe511e202204ecd7c61a6972a4de78d08ed9dd6e21ef973fb11dfa79083df1215cc26ca3bf10121022ae24aecee27d2f6b4c80836dfe1e86a6f9a14a4dd3b1d269bdeda4e6834e82f00000000"
+    "0200000000010135b75aa2c8139450c28da2211ef03ff96b6685f9cc4a3901c5cb130bc8279d730200000000fdffffff041027000000000000225120032de3625c66e422222c934742174caf0b7177d547c82e44d96874d729f5f0960000000000000000476a450102030400111111111111111111111111111111111111111111111111111111111111111122222222222222222222222222222222222222222222222222222222222222220000000000000000536a4c50aaaaaaaaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbccccccccccccccccccccccccccccccccccccccccffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff9065000000000000160014d6daf3fba915fed7eb3a88d850faccb9fd00db170247304402206897c49bade8add49f0b89378e8d30f7ab430298c2b89b6e1d181e92e52ef0d402200290489fedd5eb9aea7d661bd6f8c64f0a6f51274c3befb3f35426cc3e7a83090121022ae24aecee27d2f6b4c80836dfe1e86a6f9a14a4dd3b1d269bdeda4e6834e82f00000000"
   );
   txb.addInputs([
     {
@@ -178,7 +178,7 @@ async function createTransaction(redeem) {
         value: preUTXO.outs[0].value,
       },
       tapLeafScript: [tapLeafScript(redeem)],
-      sequence: 0xefffffff, // big endian
+      sequence: 0xfffffffd, // big endian
     },
   ]);
   txb.addOutputs([
@@ -265,9 +265,9 @@ async function createTransaction(redeem) {
 const res = createTransaction(burn_redeem)
   .then((transaction) => {
     // console.log(transaction);
-    API(process.env.url_internal, "sendrawtransaction", transaction);
+    // API(process.env.url_internal, "sendrawtransaction", transaction);
     // Require to test
-    // API(process.env.url_internal, "testmempoolaccept", [transaction]);
+    API(process.env.url_internal, "testmempoolaccept", [transaction]);
   })
   .catch((error) => {
     console.log(error);
